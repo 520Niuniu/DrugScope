@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>登录｜DrugScope</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; color: #17343d; background: radial-gradient(circle at 12% 10%, #dff7ed 0, transparent 34%), linear-gradient(145deg, #f7fbfa, #e9f2f4); }
+    .login-shell { width: min(100%, 430px); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .brand-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; color: white; font-weight: 800; background: linear-gradient(135deg, #1c8b72, #246579); box-shadow: 0 12px 26px rgba(26, 103, 91, .2); }
+    .brand strong { display: block; font-size: 21px; }
+    .brand span { color: #688087; font-size: 12px; letter-spacing: .06em; }
+    .card { padding: 32px; border: 1px solid rgba(37, 102, 105, .13); border-radius: 24px; background: rgba(255, 255, 255, .92); box-shadow: 0 22px 60px rgba(26, 65, 73, .13); backdrop-filter: blur(14px); }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    .intro { margin: 0 0 26px; color: #60777e; line-height: 1.65; }
+    label { display: block; margin: 16px 0 7px; font-size: 14px; font-weight: 650; }
+    input { width: 100%; min-height: 48px; padding: 11px 13px; border: 1px solid #bfd0d2; border-radius: 12px; font: inherit; color: inherit; background: #fff; outline: none; }
+    input:focus { border-color: #23836f; box-shadow: 0 0 0 4px rgba(35, 131, 111, .12); }
+    button { width: 100%; min-height: 48px; margin-top: 22px; border: 0; border-radius: 12px; color: white; font: inherit; font-weight: 750; cursor: pointer; background: linear-gradient(135deg, #20896f, #24687a); box-shadow: 0 10px 22px rgba(31, 111, 98, .2); }
+    button:disabled { cursor: wait; opacity: .65; }
+    .error { min-height: 22px; margin: 14px 0 -4px; color: #b3263d; font-size: 13px; }
+    .note { margin: 20px 3px 0; text-align: center; color: #71878d; font-size: 12px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main class="login-shell">
+    <div class="brand" aria-label="DrugScope">
+      <div class="brand-mark">DS</div>
+      <div><strong>DrugScope</strong><span>BIOMEDICAL SCREENING INTELLIGENCE</span></div>
+    </div>
+    <section class="card">
+      <h1>授权用户登录</h1>
+      <p class="intro">药筛数据仅向项目指定成员开放。请使用管理员分配的账号登录。</p>
+      <form id="loginForm">
+        <label for="email">邮箱</label>
+        <input id="email" name="email" type="email" autocomplete="username" required autofocus />
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" required />
+        <button id="submitButton" type="submit">登录并查看数据</button>
+        <p class="error" id="loginError" role="alert" aria-live="polite"></p>
+      </form>
+    </section>
+    <p class="note">登录会话最长持续 8 小时。请勿在公共设备上保存密码。</p>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const button = document.getElementById('submitButton');
+    const errorHost = document.getElementById('loginError');
+
+    function safeNext() {
+      const value = new URLSearchParams(location.search).get('next') || '/';
+      return value.startsWith('/') && !value.startsWith('//') ? value : '/';
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      errorHost.textContent = '';
+      button.disabled = true;
+      button.textContent = '正在验证…';
+      try {
+        const response = await fetch('/.netlify/functions/auth-login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: form.email.value, password: form.password.value })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || '登录失败，请稍后重试');
+        location.replace(safeNext());
+      } catch (error) {
+        errorHost.textContent = error.message;
+        button.disabled = false;
+        button.textContent = '登录并查看数据';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+dist/
+node_modules/
+.netlify/
+.env
+.env.*
+.codex_ppt_build/
+output/
+
+# Licensed catalogues are deployed separately and must never enter Git.
+data/*.xlsx
+data/*.xls
+data/*.csv
+!data/README.md
+
+# Never commit confidential screening files. Keep only the directory guide.
+private/screening-data/*
+!private/screening-data/README.md
+
+# Local staging area used only before uploading encrypted-in-transit data to Netlify Blobs.
+.private-data/
+.netlify-private-upload/
+.tools/

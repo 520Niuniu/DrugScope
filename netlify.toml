@@ -1,0 +1,32 @@
+[build]
+  command = "node scripts/build-static.mjs"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[[edge_functions]]
+  path = "/*"
+  function = "auth-guard"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+[[headers]]
+  for = "/.netlify/functions/screening-data"
+  [headers.values]
+    Cache-Control = "private, no-store"
+
+[[headers]]
+  for = "/.netlify/functions/drug-library"
+  [headers.values]
+    Cache-Control = "private, no-store"
+
+[[headers]]
+  for = "/.netlify/functions/target-pathways"
+  [headers.values]
+    Cache-Control = "private, no-store"

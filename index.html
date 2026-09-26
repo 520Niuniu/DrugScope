@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DrugScope｜双硫死亡 / 铜死亡增敏剂筛选平台</title>
+  <link rel="stylesheet" href="styles.css?v=20260925-3" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">DS</div>
+      <div>
+        <div class="brand-title">DrugScope</div>
+        <div class="brand-subtitle">Biomedical Screening Intelligence</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">工作区</div>
+      <a class="nav-link active" href="#knowledgeSection" data-section="knowledgeSection" aria-current="page">
+        <span>药物知识库</span>
+      </a>
+      <a class="nav-link" href="#cellDeathSection" data-section="cellDeathSection">
+        <span>死亡通路与药物</span>
+      </a>
+      <a class="nav-link" href="#resultsSection" data-section="resultsSection">
+        <span>实验分析</span>
+      </a>
+      <a class="nav-link" href="#aboutSection" data-section="aboutSection">
+        <span>项目与方法</span>
+      </a>
+      <details class="nav-group">
+        <summary class="nav-link"><span>结果报告</span></summary>
+        <div class="nav-submenu">
+          <a href="#heatmapChart">热图</a>
+          <a href="#volcanoChart">火山图</a>
+          <a href="#effectCountChart">增敏候选数量</a>
+          <a href="#antagonismCountChart">抑制/拮抗候选数量</a>
+          <a href="#antagonismViabilityChart">抑制/拮抗细胞活性</a>
+          <a href="#targetCountChart">导入药物的 FDA 靶点分布</a>
+          <a href="#vennCharts">增敏药物交集分析</a>
+          <a href="#rankingReport">药物效应候选列表</a>
+        </div>
+      </details>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="btn btn-help" id="helpBtn" type="button" aria-label="打开帮助教程">
+        <span aria-hidden="true">?</span>
+        <span class="help-text">帮助/教程</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="page-kicker">FDA 批准药物筛选 · 仅供科研使用</div>
+        <h1>双硫死亡 / 铜死亡增敏剂筛选平台</h1>
+        <p class="page-subtitle">Disulfidptosis / Cuproptosis Sensitizer Screening</p>
+      </div>
+      <div class="header-actions">
+        <span class="session-user" id="sessionUser" hidden></span>
+        <button class="btn btn-outline" id="logoutBtn" type="button" hidden>退出登录</button>
+        <button class="btn btn-outline" id="exportChartsBtn">导出图表</button>
+        <button class="btn btn-outline" id="exportReportBtn">导出报告</button>
+        <button class="btn btn-primary" id="newExperimentBtn">重新加载数据</button>
+      </div>
+    </header>
+
+    <aside class="demo-banner" id="demoBanner" role="status" aria-live="polite" hidden>
+      <strong>模拟演示数据</strong>
+      <span>当前页面中的 QSI-01、NPR-02 及所有分析结果均为虚构示例，仅用于展示流程，不代表真实 FDA 药物、实验结论或文献证据。</span>
+    </aside>
+
+    <section class="analysis-layout">
+      <section class="panel drug-panel" id="knowledgeSection">
+        <div class="panel-header compact">
+          <div>
+            <div class="panel-kicker">药物检索</div>
+            <h2>药物信息查询</h2>
+          </div>
+          <div class="embedded-data-status" aria-label="内嵌实验数据状态">
+            <div class="upload-list" id="uploadList"></div>
+            <div class="import-log" id="importLog" role="status" aria-live="polite">正在验证并加载已发布数据…</div>
+          </div>
+        </div>
+        <div class="search-row">
+          <input type="search" id="drugSearch" class="text-input" placeholder="输入药物代号、名称或别名" aria-label="药物代号、名称或别名" autocomplete="off" list="drugSearchOptions" />
+          <datalist id="drugSearchOptions"></datalist>
+          <button class="btn btn-primary" id="searchBtn">查询</button>
+        </div>
+        <article class="drug-card is-empty" id="drugInfoCard">
+          <div class="drug-head">
+            <div>
+              <div class="drug-code" id="drugCode">--</div>
+              <div class="drug-name" id="drugName">等待查询</div>
+            </div>
+            <span class="tag tag-signal" id="drugSensitivity">--</span>
+          </div>
+          <div class="evidence-note" id="drugEvidenceStatus">尚未选择药物。药物资料与实验统计将分开标注来源。</div>
+          <div class="info-grid">
+            <div>
+              <div class="small-label">药物名称</div>
+              <div class="small-value" id="drugFullName">--</div>
+            </div>
+            <div>
+              <div class="small-label">药品分类</div>
+              <div class="small-value" id="drugCategory">--</div>
+            </div>
+            <div>
+              <div class="small-label">适应症</div>
+              <div class="small-value" id="drugDisease">--</div>
+            </div>
+          </div>
+          <div class="info-block">
+            <div class="small-label">增敏结论</div>
+            <div class="small-value" id="drugConclusion">--</div>
+          </div>
+          <div class="info-block">
+            <div class="small-label">药物库通路分类</div>
+            <div class="small-value" id="drugMechanism">--</div>
+          </div>
+          <div class="info-block">
+            <div class="small-label">药物库靶点 / 功能类别</div>
+            <div class="small-value" id="drugTargets">--</div>
+          </div>
+          <div class="info-block pathway-resource-block">
+            <div class="pathway-heading">
+              <div>
+                <div class="small-label">靶点相关通路（Reactome）</div>
+                <div class="resource-summary" id="pathwayResourceSummary">选择药物后自动查询通路</div>
+              </div>
+              <button type="button" class="chart-tool-btn reset" id="refreshPathwaysBtn" disabled>刷新</button>
+            </div>
+            <div class="pathway-results" id="pathwayResults" role="status" aria-live="polite">选择真实药物后显示其具体靶点相关的人类通路。</div>
+            <div class="external-privacy-note">通路查询只向 Reactome 发送 FDA 药物库公开的具体 Target，不发送药物名称、Pathway 大类、原始实验表格、候选列表或统计结果。宽泛类别和空 Target 不发起查询。</div>
+          </div>
+          <div class="info-block" id="drugSourceBlock" hidden>
+            <div class="small-label">FDA 药物库来源链接</div>
+            <div class="small-value"><a id="drugSourceUrl" class="drug-source-link" target="_blank" rel="noopener noreferrer">打开药物资料页面 ↗</a></div>
+          </div>
+          <div class="info-block pubmed-block">
+            <div class="pubmed-heading">
+              <div>
+                <div class="small-label">PubMed 实时文献</div>
+                <div class="pubmed-query" id="pubmedQuery">双硫死亡 / 铜死亡 / 铁死亡多词检索</div>
+              </div>
+              <button type="button" class="chart-tool-btn reset" id="refreshPubmedBtn">刷新</button>
+            </div>
+            <div class="pubmed-results" id="pubmedResults" role="status" aria-live="polite">选择药物后自动检索 PubMed</div>
+            <div class="literature-actions">
+              <a id="googleScholarLink" class="resource-link" target="_blank" rel="noopener noreferrer" hidden>在 Google Scholar 检索更多文献 ↗</a>
+            </div>
+            <div class="pubmed-disclaimer">数据来源：<a href="https://pubmed.ncbi.nlm.nih.gov/" target="_blank" rel="noopener noreferrer">PubMed / NCBI</a>。PubMed 自动检索只发送当前药物名称；Google Scholar 仅在你点击链接后接收检索词。两者都不会接收实验数据。文献题录仅用于研究检索，请以原始记录为准。</div>
+          </div>
+          <div class="info-block clinical-trials-block">
+            <div class="pubmed-heading">
+              <div>
+                <div class="small-label">ClinicalTrials.gov 临床试验</div>
+                <div class="pubmed-query" id="clinicalTrialsQuery">选择药物后自动检索临床研究</div>
+              </div>
+              <button type="button" class="chart-tool-btn reset" id="refreshClinicalTrialsBtn">刷新</button>
+            </div>
+            <div class="clinical-trials-results" id="clinicalTrialsResults" role="status" aria-live="polite">选择药物后自动检索 ClinicalTrials.gov</div>
+            <div class="pubmed-disclaimer">数据来源：<a href="https://clinicaltrials.gov/" target="_blank" rel="noopener noreferrer">ClinicalTrials.gov</a>。自动检索只发送当前药物名称，不发送实验表格或统计结果。试验状态可能持续更新，请以注册页面为准。</div>
+          </div>
+          <div class="info-block">
+            <div class="small-label">补充说明 / 扩展信息</div>
+            <div class="small-value" id="drugNotes">--</div>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="panel cell-death-panel" id="cellDeathSection" aria-labelledby="cellDeathTitle">
+      <div class="panel-header cell-death-heading">
+        <div>
+          <div class="panel-kicker">文献证据与药物库映射</div>
+          <h2 id="cellDeathTitle">铁死亡、双硫死亡与铜死亡通路</h2>
+        </div>
+        <span class="research-badge">Curated overview</span>
+      </div>
+      <p class="cell-death-lead">汇总代表性的已报道核心分子网络，并将当前 FDA 药物库中的 Target、机制、文献/备注及专用证据字段与这些网络进行透明匹配。该栏目用于发现可复核线索，不把“靶点相关”解释为药物已经被实验证明可诱导或抑制相应细胞死亡。</p>
+
+      <div class="death-tabs" role="tablist" aria-label="选择细胞死亡类型">
+        <button type="button" class="death-tab is-active" role="tab" aria-selected="true" data-death-key="ferroptosis">铁死亡</button>
+        <button type="button" class="death-tab" role="tab" aria-selected="false" data-death-key="disulfidptosis">双硫死亡</button>
+        <button type="button" class="death-tab" role="tab" aria-selected="false" data-death-key="cuproptosis">铜死亡</button>
+      </div>
+
+      <div class="death-summary" id="deathSummary" role="tabpanel" aria-live="polite"></div>
+
+      <div class="death-knowledge-grid">
+        <article class="death-knowledge-card">
+          <div class="death-card-heading">
+            <div>
+              <div class="small-label">代表性核心网络</div>
+              <h3 id="deathPathwayHeading">通路模块</h3>
+            </div>
+            <span class="death-count" id="deathModuleCount">0 个模块</span>
+          </div>
+          <div class="death-module-list" id="deathModuleList"></div>
+        </article>
+
+        <article class="death-knowledge-card">
+          <div class="death-card-heading death-drug-heading">
+            <div>
+              <div class="small-label">当前 FDA 药物库</div>
+              <h3 id="deathDrugHeading">关联药物</h3>
+            </div>
+            <span class="death-count" id="deathDrugCount">正在加载</span>
+          </div>
+          <div class="death-drug-controls">
+            <label>
+              <span class="visually-hidden">筛选证据类型</span>
+              <select id="deathDrugEvidenceFilter" aria-label="筛选药物证据类型">
+                <option value="all">全部关联</option>
+                <option value="literature">仅 PubMed 明确关联</option>
+                <option value="annotated">仅药物库明确注释</option>
+                <option value="pathway">仅靶点/机制关联</option>
+              </select>
+            </label>
+            <label class="death-drug-search-label">
+              <span class="visually-hidden">筛选药物名称或代号</span>
+              <input type="search" id="deathDrugSearch" placeholder="筛选药物名称或代号" aria-label="筛选关联药物" />
+            </label>
+          </div>
+          <div class="death-drug-list" id="deathDrugList" role="status" aria-live="polite"></div>
+        </article>
+      </div>
+
+      <article class="death-evidence-card">
+        <div class="small-label">代表性证据与数据库覆盖</div>
+        <div class="death-reference-list" id="deathReferenceList"></div>
+        <p class="death-evidence-note">整理日期：2026-09-25。文献通过 PubMed 定向检索核对；Reactome 检索到铁死亡位于较宽泛的 Regulated Necrosis 通路下，但未检索到以“双硫死亡”或“铜死亡”命名的人类通路。因此这里展示的是文献归纳的代表性模块，并非系统综述或完整通路全集。</p>
+      </article>
+    </section>
+
+    <section class="panel charts-panel" id="resultsSection">
+      <div class="panel-header">
+        <div>
+          <div class="panel-kicker">交互分析</div>
+          <h2>结果图表</h2>
+        </div>
+        <div class="segmented" role="group" aria-label="图表快捷导航">
+          <button class="segment active" data-chart="heatmap" aria-pressed="true">热图</button>
+          <button class="segment" data-chart="volcano" aria-pressed="false">火山图</button>
+        </div>
+      </div>
+      <div class="analysis-note">
+        <b>探索性初筛：</b>MAD=3 筛选后每组至少保留 4 个技术重复孔。增敏和直接救援同时要求直接活力变化与交互效应达标；仅有正向交互而无直接救援的结果单列为“仅相对拮抗”。该结果只反映板内技术稳定性，不替代独立生物学重复。
+      </div>
+
+      <div class="chart-grid">
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>热图：相对单药组的药物效应</span>
+            <div class="volcano-toolbar" aria-label="热图显示选项">
+              <label class="volcano-view-label">
+                <span class="visually-hidden">热图处理组</span>
+                <select id="heatmapViewSelect" aria-label="选择热图处理组">
+                  <option value="glucose">仅无糖共处理</option>
+                  <option value="kl11743">仅 KL11743</option>
+                  <option value="copper">仅 ES + CuCl₂</option>
+                  <option value="disulfidptosis_collage">无糖 + KL11743 共处理拼图</option>
+                </select>
+              </label>
+              <label class="volcano-view-label">
+                <span class="visually-hidden">热图数值指标</span>
+                <select id="heatmapMetricSelect" aria-label="选择热图数值指标">
+                  <option value="log2fc">相对效应 log₂FC</option>
+                  <option value="viability">平均细胞活性</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div id="heatmapChart" class="heatmap-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>多维火山图：增敏、直接救援与仅相对拮抗</span>
+            <div class="volcano-toolbar" aria-label="火山图缩放工具">
+              <label class="volcano-view-label">
+                <span class="visually-hidden">火山图视图</span>
+                <select id="volcanoViewSelect" aria-label="选择火山图处理组">
+                  <option value="all">全部处理组</option>
+                  <option value="glucose">仅无糖共处理</option>
+                  <option value="kl11743">仅 KL11743</option>
+                  <option value="copper">仅 ES + CuCl₂</option>
+                  <option value="disulfidptosis_collage">无糖 + KL11743 共处理拼图</option>
+                </select>
+              </label>
+              <label class="volcano-view-label">
+                <span class="visually-hidden">药物标签字体大小</span>
+                <select id="volcanoLabelSizeSelect" aria-label="调整火山图药物标签字体大小">
+                  <option value="8">标签 8 px</option>
+                  <option value="10" selected>标签 10 px</option>
+                  <option value="12">标签 12 px</option>
+                  <option value="14">标签 14 px</option>
+                  <option value="16">标签 16 px</option>
+                </select>
+              </label>
+              <button type="button" class="chart-tool-btn" id="volcanoZoomOut" aria-label="缩小火山图">−</button>
+              <span id="volcanoZoomValue">100%</span>
+              <button type="button" class="chart-tool-btn" id="volcanoZoomIn" aria-label="放大火山图">＋</button>
+              <button type="button" class="chart-tool-btn reset" id="volcanoZoomReset">重置</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div id="volcanoChart" class="volcano-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>增敏候选数量</span>
+            <span class="chart-chip">增敏初筛</span>
+          </div>
+          <div class="chart-wrap">
+            <div id="effectCountChart" class="effect-count-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>抑制/拮抗候选数量</span>
+            <span class="chart-chip">直接救援与仅相对拮抗</span>
+          </div>
+          <div class="chart-wrap">
+            <div id="antagonismCountChart" class="effect-count-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span id="antagonismBarTitle">抑制/拮抗候选细胞活性</span>
+            <div class="volcano-toolbar" aria-label="抑制和拮抗细胞活性图筛选选项">
+              <label class="volcano-view-label">
+                <span class="visually-hidden">选择抑制和拮抗处理条件</span>
+                <select id="antagonismConditionSelect" aria-label="选择抑制和拮抗处理条件">
+                  <option value="无糖共处理">无糖共处理</option>
+                  <option value="KL11743共处理">KL11743 共处理</option>
+                  <option value="铜死亡诱导剂共处理">ES + CuCl₂ 共处理</option>
+                </select>
+              </label>
+              <label class="volcano-view-label">
+                <span class="visually-hidden">选择抑制和拮抗药物浓度</span>
+                <select id="antagonismConcentrationSelect" aria-label="选择抑制和拮抗药物浓度">
+                  <option value="0.1">0.1 µM</option>
+                  <option value="1" selected>1 µM</option>
+                  <option value="10">10 µM</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="analysis-note compact-note">
+            每个候选药物显示单药、诱导条件单独和共处理三组归一化细胞活性（mean ± SD）。交互检验比较共处理与单药，直接检验比较共处理与诱导条件单独组。
+          </div>
+          <div class="chart-wrap">
+            <div id="antagonismViabilityChart" class="antagonism-viability-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>导入药物的 FDA 靶点分布</span>
+            <span class="chart-chip">FDA 靶点分布</span>
+          </div>
+          <div class="chart-wrap">
+            <div id="targetCountChart" class="target-count-chart report-anchor"></div>
+          </div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span>增敏药物交集分析</span>
+            <label class="volcano-view-label">
+              <span class="visually-hidden">选择增敏药物交集</span>
+              <select id="vennViewSelect" aria-label="选择增敏药物交集图">
+                <option value="disulfidptosis">双硫死亡增敏交集</option>
+                <option value="glucose">无糖共处理浓度交集</option>
+                <option value="kl11743">KL11743 浓度交集</option>
+                <option value="copper">ES + CuCl₂ 浓度交集</option>
+              </select>
+            </label>
+          </div>
+          <div id="vennCharts" class="venn-grid report-anchor"></div>
+        </article>
+
+        <article class="chart-card wide-card">
+          <div class="chart-card-title">
+            <span id="rankingTitle">药物增敏候选列表</span>
+            <div class="volcano-toolbar" aria-label="候选排名筛选选项">
+              <label class="volcano-view-label">
+                <span class="visually-hidden">筛选药物效应候选</span>
+                <select id="rankingFilterSelect" aria-label="筛选药物效应候选列表">
+                  <optgroup label="增敏候选">
+                    <option value="all">全部增敏候选</option>
+                    <option value="disulfidptosis">双硫死亡增敏候选</option>
+                    <option value="cuproptosis">铜死亡增敏候选</option>
+                    <option value="both">同时增敏双硫死亡和铜死亡</option>
+                  </optgroup>
+                  <optgroup label="直接救援候选">
+                    <option value="antagonism_all">全部直接救援候选</option>
+                    <option value="antagonism_disulfidptosis">双硫死亡直接救援候选</option>
+                    <option value="antagonism_cuproptosis">铜死亡直接救援候选</option>
+                    <option value="antagonism_both">同时直接救援双硫死亡和铜死亡</option>
+                  </optgroup>
+                  <optgroup label="仅相对拮抗">
+                    <option value="relative_antagonism_all">全部仅相对拮抗</option>
+                    <option value="relative_antagonism_disulfidptosis">双硫死亡仅相对拮抗</option>
+                    <option value="relative_antagonism_cuproptosis">铜死亡仅相对拮抗</option>
+                    <option value="relative_antagonism_both">两类死亡均为仅相对拮抗</option>
+                  </optgroup>
+                </select>
+              </label>
+              <label class="volcano-view-label">
+                <span class="visually-hidden">按药物浓度筛选候选排名</span>
+                <select id="rankingConcentrationSelect" aria-label="按药物浓度筛选候选排名">
+                  <option value="all">全部浓度</option>
+                  <option value="0.1">0.1 µM</option>
+                  <option value="1">1 µM</option>
+                  <option value="10">10 µM</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="table-area report-anchor" id="rankingReport">
+            <table class="data-table">
+              <caption id="rankingCaption" class="visually-hidden">药物增敏候选排名</caption>
+              <thead>
+                <tr>
+                  <th>药物代号</th>
+                  <th>药物名称</th>
+                  <th>双硫死亡判定</th>
+                  <th>铜死亡判定</th>
+                  <th id="rankingScoreHeader">增敏评分</th>
+                  <th id="rankingStrongestHeader">最强增敏效应</th>
+                </tr>
+              </thead>
+              <tbody id="rankingTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel about-panel" id="aboutSection" aria-labelledby="aboutTitle">
+      <div class="panel-header about-heading">
+        <div>
+          <div class="panel-kicker">项目介绍与可复现方法</div>
+          <h2 id="aboutTitle">关于 DrugScope</h2>
+        </div>
+        <span class="research-badge">Research use only</span>
+      </div>
+      <p class="about-lead">DrugScope 是一个在浏览器本地运行的探索性药物增敏筛选工具，用于整理细胞活性数据、比较共处理组与同药物同浓度单药组，并生成候选优先级。它不替代原始数据审阅、机制实验、临床判断或统计学复核。</p>
+
+      <div class="method-flow" aria-label="分析流程">
+        <div><b>01</b><span>导入并解析<br />原始孔板或长表</span></div>
+        <div><b>02</b><span>按药物、浓度<br />和处理条件分组</span></div>
+        <div><b>03</b><span>计算效应量<br />与统计显著性</span></div>
+        <div><b>04</b><span>生成图表并<br />进行独立验证</span></div>
+      </div>
+
+      <div class="method-grid">
+        <article class="method-card method-card-wide">
+          <h3>1. 输入文件与 96 孔板布局</h3>
+          <p>原始孔板推荐使用一组文件名可识别的 <code>CON-Drug1+Drug2.xlsx</code> 和 <code>CHU-Drug1+Drug2.xlsx</code>，系统读取每个文件的<b>第一个工作表</b>。当前实验设计没有复测板，同一个药物也不会出现在多个板对中；系统仍以“CON/CHU 板对 × 药物”为独立分析单位，避免意外混合数据。</p>
+          <div class="method-table-wrap">
+            <table class="method-table">
+              <thead>
+                <tr><th>板与区域</th><th>处理条件</th><th>Drug1</th><th>Drug2</th><th>未处理基线</th><th>条件单独对照</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>CON 1–6 列</td><td>有糖单药</td><td>B/C/D：0.1/1/10 µM</td><td>F/G/H：0.1/1/10 µM</td><td>A + E 行</td><td>不适用</td></tr>
+                <tr><td>CON 7–12 列</td><td>无糖共处理</td><td>B/C/D：0.1/1/10 µM</td><td>F/G/H：0.1/1/10 µM</td><td>A 行</td><td>E 行：单纯无糖</td></tr>
+                <tr><td>CHU 1–6 列</td><td>KL11743 共处理</td><td>B/C/D：0.1/1/10 µM</td><td>F/G/H：0.1/1/10 µM</td><td>A 行</td><td>E 行：单纯 KL11743</td></tr>
+                <tr><td>CHU 7–12 列</td><td>ES + CuCl₂ 共处理</td><td>B/C/D：0.1/1/10 µM</td><td>F/G/H：0.1/1/10 µM</td><td>A 行</td><td>E 行：单纯 ES + CuCl₂</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>CON、CHU 的整条 A 行都表示<b>有糖、无药、无诱导剂</b>的本板未处理孔，不随左右半区改变含义。也可导入 CSV、TXT、XLS、XLSX 长表；必需字段为 <code>DrugCode</code>、<code>Group</code>、<code>Concentration</code>、<code>Viability</code>，<code>Well</code> 可选。空单元格、非数值和非法浓度均作为缺失或拒绝记录，绝不替换为 0。</p>
+        </article>
+        <article class="method-card">
+          <h3>2. 板内基线与归一化</h3>
+          <div class="method-formula"><span>归一化细胞活性（%）</span><code>OD孔 ÷ 同板、同实验臂未处理基线 OD 均值 × 100</code></div>
+          <p>CON 左半区的有糖单药臂以 A+E 行为基线；CON 右半区、CHU 左半区和 CHU 右半区分别以各自半区的 A 行为基线。不同板、不同实验臂的基线不会混合平均。</p>
+          <p>E 行的无糖、KL11743 或 ES + CuCl₂ 条件单独组，也除以所在实验臂的同一基线。其归一化均值不必等于 100%，它代表诱导条件本身造成的活力变化，并用于后续“直接效应”比较。</p>
+        </article>
+        <article class="method-card">
+          <h3>3. 分组、MAD 离群值与重复孔质控</h3>
+          <p>数据按“<b>板对 × 药物 × 处理条件 × 浓度</b>”分组。每组先计算中位数和 MAD（median absolute deviation），仅保留满足下式的孔：</p>
+          <div class="method-formula"><span>MAD 保留规则</span><code>|x − median| ÷ MAD ≤ 3</code></div>
+          <p>当一组只有 1–2 个值或 <code>MAD = 0</code> 时，不执行 MAD 剔除，避免在信息不足或所有读数相同时误删数据。实验计划为每组 6 个技术孔；筛选后，共处理组、同药同浓度单药组及条件单独组至少各保留 <b>4 个有效孔</b>，才可完成双重判定。</p>
+          <p>导入质控会报告解析成功/失败文件、非法记录、MAD 离群孔，以及缺失分组、缺失剂量和重复孔不足；不足 4 孔的组合明确标为不可分析。</p>
+        </article>
+        <article class="method-card">
+          <h3>4. 两种效应量回答不同问题</h3>
+          <div class="method-formula"><span>交互效应</span><code>log₂FC = log₂(共处理组归一化活力 ÷ 同药同浓度单药组归一化活力)</code></div>
+          <p>交互效应比较“加上诱导条件后，这个药的表现相对单药改变了多少”。因为两组均已用各自实验臂基线归一化，所以这是跨臂的比值之比，也是热图、火山图和排序分数使用的主效应量。</p>
+          <div class="method-formula"><span>直接效应</span><code>直接活力比 = 共处理组归一化活力 ÷ 条件单独组归一化活力</code></div>
+          <p>直接效应比较“加药后是否真的比诱导条件单独组更高或更低”。因此，正向交互并不自动等于细胞得到救援；还必须查看直接活力比和对应统计检验。</p>
+        </article>
+        <article class="method-card">
+          <h3>5. Welch 检验与零方差处理</h3>
+          <p>每个药物、浓度和诱导条件进行两项双侧 Welch t 检验：<b>共处理组 vs 同药同浓度单药组</b>得到交互 p 值；<b>共处理组 vs E 行条件单独组</b>得到直接 p 值。Welch 检验不强制假定两组方差相等。</p>
+          <p>这里的样本单位是同一板内的技术孔，并非独立生物学重复。当比较双方方差都为 0 时，标准误为 0，p 值无法可靠计算；系统保留效应量供查看，但按 <code>p = 1</code> 保守处理、标注“不可计算（零方差）”，且不列为候选。</p>
+        </article>
+        <article class="method-card">
+          <h3>6. 增敏、直接救援与仅相对拮抗</h3>
+          <ul class="method-list">
+            <li><b>增敏：</b>直接活力比 <code>≤ 0.80</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≤ −0.585</code> 且交互 <code>p &lt; 0.05</code>。</li>
+            <li><b>直接救援：</b>直接活力比 <code>≥ 1.20</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≥ 0.585</code> 且交互 <code>p &lt; 0.05</code>。</li>
+            <li><b>仅相对拮抗：</b>交互 <code>log₂FC ≥ 0.585</code> 且交互 <code>p &lt; 0.05</code>，但直接效应未同时达到救援所需的幅度和显著性。</li>
+          </ul>
+          <p class="method-warning">“仅相对拮抗”只说明共处理组相对该药单药组更高，不能表述为相对诱导条件单独组已经发生实际救援。三类结果分开统计，是为了保留这一关键解释差异。</p>
+        </article>
+        <article class="method-card">
+          <h3>7. BH-FDR、A/B 级与候选排序</h3>
+          <p>系统在无糖、KL11743、ES + CuCl₂ 三种诱导条件内分别校正，并把交互检验和直接检验作为两个独立检验家族，使用 Benjamini–Hochberg 方法得到 q 值。</p>
+          <ul class="method-list">
+            <li>增敏或直接救援：交互 q 值和直接 q 值均 <code>≤ 0.10</code> 为 A 级。</li>
+            <li>仅相对拮抗：交互 q 值 <code>≤ 0.10</code> 为 A 级。</li>
+            <li>达到效应量和原始 <code>p &lt; 0.05</code>，但未通过相应 FDR 标准者为 B 级。</li>
+          </ul>
+          <div class="method-formula"><span>排序分数</span><code>|交互 log₂FC| × −log₁₀(交互 p)</code></div>
+          <p>分数同时考虑效应幅度和原始显著性，只用于同类候选的复筛优先排序，不是机制证据或临床评分。候选列表可按 0.1、1、10 µM 分浓度查看。</p>
+        </article>
+        <article class="method-card">
+          <h3>8. 图表如何解读</h3>
+          <ul class="method-list">
+            <li><b>热图与火山图：</b>展示交互比较；火山图横轴为交互 log₂FC，纵轴为 <code>−log₁₀(p)</code>。</li>
+            <li><b>候选数量图：</b>分别统计增敏、直接救援和仅相对拮抗，可按浓度核对候选数量。</li>
+            <li><b>抑制/拮抗细胞活性图：</b>横轴为药物，纵轴为归一化活力（%），并列显示单药、条件单独和共处理三组的均值 ± SD。</li>
+            <li><b>显著性：</b><code>ns</code> 表示 p≥0.05，<code>*</code>、<code>**</code>、<code>***</code> 分别表示 p&lt;0.05、p&lt;0.01、p&lt;0.001；<code>NA</code> 表示检验不可计算。图下表格同时给出两项 p/q 值、样本数和效应量。</li>
+          </ul>
+        </article>
+        <article class="method-card method-card-wide method-limitations">
+          <h3>适用范围、数据来源与验证要求</h3>
+          <p>这套方法是基于归一化活力比和 Welch 检验的探索性筛选，<b>不是</b>正式的 Bliss、Loewe 或 ZIP 药物协同模型。技术重复只能反映板内测量稳定性，不能代替独立生物学重复，也不能单独证明双硫死亡、铜死亡或特定靶点机制。</p>
+          <p>实验效应只由用户导入的数据计算；药名、靶点、机制和适应症来自站点 FDA 药物库字段，PubMed 与 ClinicalTrials.gov 结果属于外部背景资料，均不构成本实验结论。“未检索到”也不等于不存在证据。候选应回看原始孔和批次信息，并通过独立生物学重复、完整剂量反应、诱导剂/抑制剂救援以及靶向机制实验验证。</p>
+        </article>
+      </div>
+
+      <div class="project-meta">
+        <span><b>作者</b> Jie Lu · XJTU</span>
+        <span><b>版本</b> 1.2</span>
+        <span><b>更新时间</b> 2026-09-25</span>
+        <span><b>处理方式</b> 数据仅在本地浏览器分析</span>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <span>Designed and validated by Jie Lu | XJTU | Version 1.2 | For research use only</span>
+      <a href="README.md" target="_blank" rel="noopener noreferrer">项目说明与复现文档 ↗</a>
+    </footer>
+  </main>
+
+  <dialog class="export-dialog" id="exportDialog" aria-labelledby="exportDialogTitle">
+    <form method="dialog" class="export-dialog-card">
+      <div class="export-dialog-head">
+        <div>
+          <div class="panel-kicker">Chart Export</div>
+          <h2 id="exportDialogTitle">导出统计图</h2>
+        </div>
+        <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
+      </div>
+      <label class="export-field">
+        <span>选择图表</span>
+        <select id="exportChartSelect">
+          <option value="heatmapChart">药物活性热图</option>
+          <option value="volcanoChart">多维火山图</option>
+          <option value="effectCountChart">增敏候选数量柱状图</option>
+          <option value="antagonismCountChart">抑制/拮抗候选数量柱状图</option>
+          <option value="antagonismViabilityChart">抑制/拮抗候选细胞活性柱状图</option>
+          <option value="targetCountChart">FDA 药物靶点柱状图</option>
+          <option value="vennCharts">增敏药物韦恩图</option>
+        </select>
+      </label>
+      <div class="export-row">
+        <label class="export-field">
+          <span>图片格式</span>
+          <select id="exportFormatSelect">
+            <option value="png">PNG（推荐）</option>
+            <option value="jpeg">JPEG</option>
+            <option value="webp">WebP</option>
+            <option value="svg">SVG 矢量图</option>
+            <option value="pdf">PDF</option>
+          </select>
+        </label>
+        <label class="export-field" id="resolutionField">
+          <span>输出分辨率</span>
+          <select id="exportDpiSelect">
+            <option value="96">96 DPI（屏幕）</option>
+            <option value="150">150 DPI</option>
+            <option value="300" selected>300 DPI（印刷）</option>
+            <option value="600">600 DPI（高分辨率）</option>
+          </select>
+        </label>
+      </div>
+      <label class="export-field" id="exportVolcanoViewField" hidden>
+        <span>火山图导出视图</span>
+        <select id="exportVolcanoViewSelect">
+          <option value="current">当前页面视图</option>
+          <option value="all">全部处理组</option>
+          <option value="glucose">仅无糖共处理</option>
+          <option value="kl11743">仅 KL11743</option>
+          <option value="copper">仅 ES + CuCl₂</option>
+          <option value="disulfidptosis_collage">无糖 + KL11743 共处理拼图</option>
+        </select>
+      </label>
+      <div class="export-row" id="exportHeatmapFields" hidden>
+        <label class="export-field">
+          <span>热图导出视图</span>
+          <select id="exportHeatmapViewSelect">
+            <option value="current">当前页面视图</option>
+            <option value="glucose">仅无糖共处理</option>
+            <option value="kl11743">仅 KL11743</option>
+            <option value="copper">仅 ES + CuCl₂</option>
+            <option value="disulfidptosis_collage">无糖 + KL11743 共处理拼图</option>
+          </select>
+        </label>
+        <label class="export-field">
+          <span>热图数值指标</span>
+          <select id="exportHeatmapMetricSelect">
+            <option value="current">当前页面指标</option>
+            <option value="log2fc">相对效应 log₂FC</option>
+            <option value="viability">平均细胞活性</option>
+          </select>
+        </label>
+      </div>
+      <div class="export-note">高分辨率导出大型热图可能需要数秒钟。</div>
+      <div class="export-status" id="exportStatus" role="status" aria-live="polite"></div>
+      <div class="export-actions">
+        <button class="btn btn-outline" value="cancel">取消</button>
+        <button class="btn btn-primary" type="button" id="confirmChartExport">开始导出</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="cell-death-knowledge.js?v=20260925-1"></script>
+  <script src="app.js?v=20260925-2"></script>
+  <script src="tutorial.js?v=20260921-2"></script>
+</body>
+</html>

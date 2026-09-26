@@ -1,0 +1,18 @@
+{
+  "name": "drugscope",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build-static.mjs",
+    "hash-password": "node scripts/hash-password.mjs",
+    "test": "node --test",
+    "upload:drug-library": "node scripts/upload-drug-library-blob.mjs",
+    "upload:screening-data": "node scripts/upload-screening-blobs.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.0"
+  }
+}
