@@ -98,6 +98,26 @@ test('non-zero-variance dual-comparison sensitization remains an A-tier candidat
   assert.equal(rows[0].tier, 'A');
 });
 
+test('large fold change with a small absolute viability difference is not a candidate', async () => {
+  const app = await loadAppFunctions();
+  const data = [];
+  const single = [9.8, 9.9, 10, 10, 10.1, 10.2];
+  const conditionOnly = [9.8, 9.9, 10, 10, 10.1, 10.2];
+  const treated = [14.8, 14.95, 15.1, 15.1, 15.25, 15.4];
+  for (let index = 0; index < 6; index += 1) {
+    data.push({ platePair: 'D1+D2', drugCode: 'D1', group: '单药', concentration: 1, viability: single[index] });
+    data.push({ platePair: 'D1+D2', drugCode: 'D1', group: '无糖共处理', concentration: 0, viability: conditionOnly[index] });
+    data.push({ platePair: 'D1+D2', drugCode: 'D1', group: '无糖共处理', concentration: 1, viability: treated[index] });
+  }
+
+  const rows = app.calculateVolcanoData(data);
+  assert.equal(rows.length, 1);
+  assert.ok(rows[0].log2FC >= 0.585);
+  assert.ok(Math.abs(rows[0].interactionDifference - 5.1) < 1e-9);
+  assert.equal(rows[0].status, 'stable');
+  assert.equal(rows[0].tier, 'none');
+});
+
 test('MAD filtering drops an isolated outlier while retaining the other technical wells', async () => {
   const app = await loadAppFunctions();
   const rows = [100, 101, 99, 100.5, 98.5, 500].map(value => ({ value }));

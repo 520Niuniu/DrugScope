@@ -799,6 +799,79 @@ h2 {
 
 .analysis-note b { color: #315c5e; }
 
+.analysis-settings {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #dce9e7;
+  border-radius: 9px;
+  background: #fbfdfc;
+}
+
+.analysis-settings summary {
+  color: var(--primary-deep);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.analysis-threshold-summary,
+.analysis-settings-help,
+.analysis-settings-status {
+  margin: 9px 0 0;
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.analysis-settings-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(145px, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.analysis-settings-form label {
+  display: grid;
+  gap: 5px;
+  color: #526c70;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.analysis-settings-form input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #ccdddb;
+  border-radius: 7px;
+  color: var(--primary-deep);
+  background: #fff;
+  font: inherit;
+}
+
+.analysis-settings-form input:focus {
+  outline: 3px solid rgba(105,183,174,0.2);
+  border-color: var(--primary-2);
+}
+
+.analysis-settings-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 8px;
+  align-items: center;
+}
+
+.analysis-settings-actions .btn {
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
+.analysis-settings-status {
+  min-height: 16px;
+  color: var(--primary-deep);
+  font-weight: 700;
+}
+
 .segmented {
   display: flex;
   background: #eef6f8;
@@ -2696,6 +2769,7 @@ h2 { color: #183d42; letter-spacing: -0.35px; }
 
   .charts-panel > .panel-header,
   .chart-card-title { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .analysis-settings-form { grid-template-columns: 1fr; }
   .segmented { width: 100%; }
   .segment { flex: 1; }
   .volcano-toolbar { display: flex; width: 100%; flex-wrap: wrap; }

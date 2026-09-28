@@ -20,15 +20,21 @@ const GROUP_LABEL_MAP = {
   '铜死亡': '铜死亡诱导剂共处理'
 };
 
-const ANALYSIS_CONFIG = Object.freeze({
+const DEFAULT_ANALYSIS_CONFIG = Object.freeze({
   madK: 3.0,
   minReplicates: 4,
   log2FcCutoff: 0.585,
+  minAbsoluteInteractionDifference: 10,
   directDecreaseRatio: 0.80,
   directIncreaseRatio: 1.20,
   pCutoff: 0.05,
   tierAFdrCutoff: 0.10
 });
+
+// These session-scoped thresholds are intentionally mutable through the analysis
+// settings panel. Import QC parameters remain fixed so changing a candidate cutoff
+// never silently changes which wells were retained.
+const ANALYSIS_CONFIG = { ...DEFAULT_ANALYSIS_CONFIG };
 
 const SCREENING_CONCENTRATIONS = Object.freeze([0.1, 1, 10]);
 const CONDITION_GROUPS = Object.freeze(['无糖共处理', 'KL11743共处理', '铜死亡诱导剂共处理']);
@@ -1164,7 +1170,7 @@ function renderVolcano(data, precomputedPoints = null) {
   const conditions = viewConfig.conditions;
   const conditionLabels = viewConfig.labels;
   const concentrations = SCREENING_CONCENTRATIONS;
-  const cellW = 290 * volcanoZoom, cellH = 190 * volcanoZoom, left = 66, top = 60, right = 66;
+  const cellW = 290 * volcanoZoom, cellH = 190 * volcanoZoom, left = 66, top = 82, right = 66;
   const width = left + cellW * concentrations.length + right;
   const height = top + cellH * conditions.length + 55;
   const svg = createSvg(width, height);
@@ -1176,7 +1182,7 @@ function renderVolcano(data, precomputedPoints = null) {
   const yLimit = Math.max(2, Math.min(12, Math.ceil(Math.max(...points.map(p => p.negLog10P)) + 0.5)));
   const thresholdY = -Math.log10(ANALYSIS_CONFIG.pCutoff);
   const colors = { synergy: '#3182bd', rescue: '#de2d26', relativeAntagonism: '#d97706', stable: '#8b98a0' };
-  const appendStatusMarker = (parent, status, x, y, size = 4) => {
+  const appendStatusMarker = (parent, status, x, y, size = 4, tier = 'none') => {
     let marker;
     if (status === 'rescue') {
       marker = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -1190,7 +1196,17 @@ function renderVolcano(data, precomputedPoints = null) {
       marker.setAttribute('cy', y);
       marker.setAttribute('r', size);
     }
-    marker.setAttribute('fill', colors[status]);
+    if (tier === 'B') {
+      marker.setAttribute('fill', '#fff');
+      marker.setAttribute('stroke', colors[status]);
+      marker.setAttribute('stroke-width', '1.8');
+    } else {
+      marker.setAttribute('fill', colors[status]);
+      if (tier === 'A') {
+        marker.setAttribute('stroke', colors[status]);
+        marker.setAttribute('stroke-width', '1');
+      }
+    }
     parent.appendChild(marker);
     return marker;
   };
@@ -1198,11 +1214,16 @@ function renderVolcano(data, precomputedPoints = null) {
   [['synergy', '增敏'], ['rescue', '直接救援'], ['relativeAntagonism', '仅相对拮抗'], ['stable', '其他']]
     .forEach(([status, label], index) => {
       const legendX = left + 105 + index * 170;
-      appendStatusMarker(svg, status, legendX, 12, 4);
+      appendStatusMarker(svg, status, legendX, 12, 4, status === 'stable' ? 'none' : 'A');
       appendSvgText(svg, legendX + 8, 15, label, 'start', 9, '#445b66', '600');
     });
 
-  concentrations.forEach((concentration, col) => appendSvgText(svg, left + col * cellW + cellW / 2, 35, `${concentration} µM`, 'middle', 12, '#445b66', '700'));
+  appendStatusMarker(svg, 'synergy', left + 300, 34, 4, 'A');
+  appendSvgText(svg, left + 309, 37, 'A级：通过相应 FDR（实心）', 'start', 8, '#445b66', '600');
+  appendStatusMarker(svg, 'synergy', left + 490, 34, 4, 'B');
+  appendSvgText(svg, left + 499, 37, 'B级：仅原始 p 达标（空心）', 'start', 8, '#445b66', '600');
+
+  concentrations.forEach((concentration, col) => appendSvgText(svg, left + col * cellW + cellW / 2, 59, `${concentration} µM`, 'middle', 12, '#445b66', '700'));
   conditions.forEach((condition, row) => {
     appendSvgText(svg, left + cellW * concentrations.length + 32, top + row * cellH + cellH / 2, conditionLabels[condition], 'middle', 11, '#445b66', '700', -90);
     concentrations.forEach((concentration, col) => {
@@ -1223,15 +1244,15 @@ function renderVolcano(data, precomputedPoints = null) {
 
       const facetPoints = points.filter(p => p.condition === condition && p.concentration === concentration);
       facetPoints.forEach(p => {
-        const marker = appendStatusMarker(svg, p.status, sx(clamp(p.log2FC, -xLimit, xLimit)), sy(p.negLog10P), 3);
-        marker.setAttribute('opacity', p.status === 'stable' ? '0.45' : '0.78');
+        const marker = appendStatusMarker(svg, p.status, sx(clamp(p.log2FC, -xLimit, xLimit)), sy(p.negLog10P), 3, p.tier);
+        marker.setAttribute('opacity', p.status === 'stable' ? '0.45' : '0.88');
         const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
         const tierLabel = p.tier === 'none' ? '未达初筛阈值' : `${p.tier}级候选`;
         const statusLabel = { synergy: '增敏候选', rescue: '直接救援候选', relativeAntagonism: '仅相对拮抗', stable: '未达双重判定' }[p.status];
         const directText = Number.isFinite(p.directRatio)
           ? `\n直接活力比: ${p.directRatio.toFixed(3)}\n直接p: ${formatStatisticalValue(p, 'directPValue', 'directTestValid')}\n直接BH-FDR q: ${formatStatisticalValue(p, 'directQValue', 'directTestValid')}\n直接比较n: ${p.nTreated} vs ${p.nConditionControl}`
           : '\n缺少足够的诱导条件单独对照孔';
-        title.textContent = `${p.drugName} (${p.drugCode})\n${statusLabel}\n交互log₂FC: ${p.log2FC.toFixed(3)}\n交互p: ${formatStatisticalValue(p, 'pValue', 'interactionTestValid')}\n交互BH-FDR q: ${formatStatisticalValue(p, 'qValue', 'interactionTestValid')}${directText}\n${tierLabel}\nScore: ${p.score.toFixed(3)}`;
+        title.textContent = `${p.drugName} (${p.drugCode})\n${statusLabel}\n交互log₂FC: ${p.log2FC.toFixed(3)}\n交互绝对活力差: ${p.interactionDifference.toFixed(1)} 个百分点\n交互p: ${formatStatisticalValue(p, 'pValue', 'interactionTestValid')}\n交互BH-FDR q: ${formatStatisticalValue(p, 'qValue', 'interactionTestValid')}${directText}\n${tierLabel}\nScore: ${p.score.toFixed(3)}`;
         marker.appendChild(title);
       });
       const labelBounds = {
@@ -1379,6 +1400,7 @@ function calculateVolcanoData(data, conditionDefinitions = null) {
         const meanControl = average(control), meanTreated = average(treated);
         if (meanControl <= 0 || meanTreated <= 0) return;
         const log2FC = Math.log2(meanTreated / meanControl);
+        const interactionDifference = meanTreated - meanControl;
         const calculatedPValue = welchTTestPValue(treated, control);
         const interactionTestValid = Number.isFinite(calculatedPValue) && calculatedPValue >= 0;
         const pValue = interactionTestValid ? calculatedPValue : 1;
@@ -1389,8 +1411,14 @@ function calculateVolcanoData(data, conditionDefinitions = null) {
         const directTestValid = hasDirectControl && Number.isFinite(calculatedDirectPValue) && calculatedDirectPValue >= 0;
         const directPValue = hasDirectControl ? (directTestValid ? calculatedDirectPValue : 1) : null;
         const negLog10P = -Math.log10(Math.max(pValue, 1e-300));
-        const interactionDown = interactionTestValid && log2FC <= -ANALYSIS_CONFIG.log2FcCutoff && pValue < ANALYSIS_CONFIG.pCutoff;
-        const interactionUp = interactionTestValid && log2FC >= ANALYSIS_CONFIG.log2FcCutoff && pValue < ANALYSIS_CONFIG.pCutoff;
+        const interactionDown = interactionTestValid
+          && log2FC <= -ANALYSIS_CONFIG.log2FcCutoff
+          && interactionDifference <= -ANALYSIS_CONFIG.minAbsoluteInteractionDifference
+          && pValue < ANALYSIS_CONFIG.pCutoff;
+        const interactionUp = interactionTestValid
+          && log2FC >= ANALYSIS_CONFIG.log2FcCutoff
+          && interactionDifference >= ANALYSIS_CONFIG.minAbsoluteInteractionDifference
+          && pValue < ANALYSIS_CONFIG.pCutoff;
         const directDown = directTestValid
           && directRatio <= ANALYSIS_CONFIG.directDecreaseRatio && directPValue < ANALYSIS_CONFIG.pCutoff;
         const directUp = directTestValid
@@ -1404,7 +1432,7 @@ function calculateVolcanoData(data, conditionDefinitions = null) {
               : 'stable';
         results.push({
           platePair, drugCode, drugName: drugKnowledgeBase[drugCode]?.fullName || drugCode,
-          condition, concentration, log2FC, pValue, negLog10P,
+          condition, concentration, log2FC, interactionDifference, pValue, negLog10P,
           score: Math.abs(log2FC) * negLog10P, status,
           nTreated: treated.length, nControl: control.length,
           nConditionControl: conditionControl.length,
@@ -2244,6 +2272,50 @@ function renderAnalysis(data) {
   renderRanking(data, volcanoStats);
 }
 
+const ANALYSIS_SETTING_FIELDS = Object.freeze([
+  { id: 'log2FcCutoffInput', key: 'log2FcCutoff', min: 0, max: 5 },
+  { id: 'absoluteDifferenceInput', key: 'minAbsoluteInteractionDifference', min: 0, max: 200 },
+  { id: 'directDecreaseRatioInput', key: 'directDecreaseRatio', min: 0.01, max: 1 },
+  { id: 'directIncreaseRatioInput', key: 'directIncreaseRatio', min: 1, max: 10 },
+  { id: 'pCutoffInput', key: 'pCutoff', min: 0.000001, max: 1 },
+  { id: 'fdrCutoffInput', key: 'tierAFdrCutoff', min: 0.000001, max: 1 }
+]);
+
+function updateAnalysisThresholdSummary() {
+  const summary = document.getElementById('analysisThresholdSummary');
+  if (!summary) return;
+  summary.textContent = `当前阈值：|log₂FC| ≥ ${ANALYSIS_CONFIG.log2FcCutoff}；|绝对活力差| ≥ ${ANALYSIS_CONFIG.minAbsoluteInteractionDifference} 个百分点；直接活力比 ≤ ${ANALYSIS_CONFIG.directDecreaseRatio} 或 ≥ ${ANALYSIS_CONFIG.directIncreaseRatio}；p < ${ANALYSIS_CONFIG.pCutoff}；A级 FDR q ≤ ${ANALYSIS_CONFIG.tierAFdrCutoff}。`;
+}
+
+function syncAnalysisSettingsForm() {
+  ANALYSIS_SETTING_FIELDS.forEach(({ id, key }) => {
+    const input = document.getElementById(id);
+    if (input) input.value = ANALYSIS_CONFIG[key];
+  });
+  updateAnalysisThresholdSummary();
+}
+
+function applyAnalysisSettingsFromForm() {
+  const nextConfig = {};
+  ANALYSIS_SETTING_FIELDS.forEach(({ id, key, min, max }) => {
+    const input = document.getElementById(id);
+    const value = Number(input?.value);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`${input?.labels?.[0]?.textContent?.trim() || key}超出允许范围`);
+    }
+    nextConfig[key] = value;
+  });
+  Object.assign(ANALYSIS_CONFIG, nextConfig);
+  updateAnalysisThresholdSummary();
+  renderAnalysis(drugData);
+}
+
+function resetAnalysisSettings() {
+  Object.assign(ANALYSIS_CONFIG, DEFAULT_ANALYSIS_CONFIG);
+  syncAnalysisSettingsForm();
+  renderAnalysis(drugData);
+}
+
 let rankingFilterMode = 'all';
 let rankingConcentrationMode = 'all';
 
@@ -2332,11 +2404,12 @@ function renderRanking(data, precomputedStats = null) {
     const td = document.createElement('td');
     td.colSpan = 6;
     td.className = 'table-empty';
+    const absoluteDifference = `${ANALYSIS_CONFIG.minAbsoluteInteractionDifference} 个百分点`;
     const threshold = isRescueView
-      ? `交互 log₂FC ≥ ${ANALYSIS_CONFIG.log2FcCutoff}、直接活力比 ≥ ${ANALYSIS_CONFIG.directIncreaseRatio}`
+      ? `交互 log₂FC ≥ ${ANALYSIS_CONFIG.log2FcCutoff}、绝对活力差 ≥ ${absoluteDifference}、直接活力比 ≥ ${ANALYSIS_CONFIG.directIncreaseRatio}`
       : isRelativeAntagonismView
-        ? `交互 log₂FC ≥ ${ANALYSIS_CONFIG.log2FcCutoff}、但未达到直接救援标准`
-        : `交互 log₂FC ≤ -${ANALYSIS_CONFIG.log2FcCutoff}、直接活力比 ≤ ${ANALYSIS_CONFIG.directDecreaseRatio}`;
+        ? `交互 log₂FC ≥ ${ANALYSIS_CONFIG.log2FcCutoff}、绝对活力差 ≥ ${absoluteDifference}、但未达到直接救援标准`
+        : `交互 log₂FC ≤ -${ANALYSIS_CONFIG.log2FcCutoff}、绝对活力差 ≤ -${absoluteDifference}、直接活力比 ≤ ${ANALYSIS_CONFIG.directDecreaseRatio}`;
     const emptyLabels = {
       all: `当前数据中没有达到 ${threshold} 且 p < ${ANALYSIS_CONFIG.pCutoff} 的${effectLabel}候选`,
       disulfidptosis: `没有检出双硫死亡${effectLabel}候选`,
@@ -2385,7 +2458,7 @@ function renderRanking(data, precomputedStats = null) {
           const directText = Number.isFinite(result.directRatio)
             ? `；直接活力比=${result.directRatio.toFixed(3)}，直接p=${formatStatisticalValue(result, 'directPValue', 'directTestValid')}，直接q=${formatStatisticalValue(result, 'directQValue', 'directTestValid')}`
             : '；缺少足够的诱导条件单独对照孔';
-          td.title = `${conditionLabels[result.condition]}，${result.concentration} µM；交互log₂FC=${result.log2FC.toFixed(3)}，交互p=${formatStatisticalValue(result, 'pValue', 'interactionTestValid')}，交互q=${formatStatisticalValue(result, 'qValue', 'interactionTestValid')}${directText}，${result.tier}级`;
+          td.title = `${conditionLabels[result.condition]}，${result.concentration} µM；交互log₂FC=${result.log2FC.toFixed(3)}，绝对活力差=${result.interactionDifference.toFixed(1)}个百分点，交互p=${formatStatisticalValue(result, 'pValue', 'interactionTestValid')}，交互q=${formatStatisticalValue(result, 'qValue', 'interactionTestValid')}${directText}，${result.tier}级`;
         }
         return td;
       };
@@ -2401,7 +2474,7 @@ function renderRanking(data, precomputedStats = null) {
       scoreCell.append(scorebar, document.createTextNode(row.score.toFixed(3)));
       if (row.best) {
         const directText = Number.isFinite(row.best.directRatio) ? `，直接活力比=${row.best.directRatio.toFixed(3)}` : '';
-        scoreCell.title = `评分=|交互log₂FC| × -log₁₀(交互p)；交互log₂FC=${row.best.log2FC.toFixed(3)}，交互p=${formatStatisticalValue(row.best, 'pValue', 'interactionTestValid')}，交互q=${formatStatisticalValue(row.best, 'qValue', 'interactionTestValid')}${directText}，${row.best.tier}级`;
+        scoreCell.title = `评分=|交互log₂FC| × -log₁₀(交互p)；交互log₂FC=${row.best.log2FC.toFixed(3)}，绝对活力差=${row.best.interactionDifference.toFixed(1)}个百分点，交互p=${formatStatisticalValue(row.best, 'pValue', 'interactionTestValid')}，交互q=${formatStatisticalValue(row.best, 'qValue', 'interactionTestValid')}${directText}，${row.best.tier}级`;
       }
 
       const signalCell = document.createElement('td');
@@ -3646,6 +3719,22 @@ function setupUI() {
     exportDialog.showModal();
   });
   document.getElementById('loadSampleBtn')?.addEventListener('click', loadSampleData);
+  const analysisSettingsForm = document.getElementById('analysisSettingsForm');
+  const analysisSettingsStatus = document.getElementById('analysisSettingsStatus');
+  syncAnalysisSettingsForm();
+  analysisSettingsForm?.addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+      applyAnalysisSettingsFromForm();
+      if (analysisSettingsStatus) analysisSettingsStatus.textContent = '阈值已应用，全部候选图表和排名已重新计算。';
+    } catch (error) {
+      if (analysisSettingsStatus) analysisSettingsStatus.textContent = `无法应用：${error.message}`;
+    }
+  });
+  document.getElementById('resetAnalysisSettings')?.addEventListener('click', () => {
+    resetAnalysisSettings();
+    if (analysisSettingsStatus) analysisSettingsStatus.textContent = '已恢复默认初筛阈值，并重新计算全部结果。';
+  });
   exportChartSelect.addEventListener('change', updateExportFields);
   exportFormat.addEventListener('change', () => {
     document.getElementById('resolutionField').hidden = exportFormat.value === 'svg' || exportFormat.value === 'pdf';

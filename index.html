@@ -250,8 +250,39 @@
         </div>
       </div>
       <div class="analysis-note">
-        <b>探索性初筛：</b>MAD=3 筛选后每组至少保留 4 个技术重复孔。增敏和直接救援同时要求直接活力变化与交互效应达标；仅有正向交互而无直接救援的结果单列为“仅相对拮抗”。该结果只反映板内技术稳定性，不替代独立生物学重复。
+        <b>探索性初筛：</b>MAD=3 筛选后每组至少保留 4 个技术重复孔。候选同时要求相对变化、绝对活力差和统计检验达标；仅有正向交互而无直接救援的结果单列为“仅相对拮抗”。p/q 值反映板内测量一致性和本次筛选的多重比较控制，不属于基于独立生物学重复的验证性推断。
       </div>
+
+      <details class="analysis-settings">
+        <summary>初筛阈值与敏感性检查</summary>
+        <p id="analysisThresholdSummary" class="analysis-threshold-summary"></p>
+        <form id="analysisSettingsForm" class="analysis-settings-form">
+          <label>交互 |log₂FC| 下限
+            <input id="log2FcCutoffInput" type="number" min="0" max="5" step="0.001" required />
+          </label>
+          <label>绝对活力差下限（百分点）
+            <input id="absoluteDifferenceInput" type="number" min="0" max="200" step="1" required />
+          </label>
+          <label>直接下降比上限
+            <input id="directDecreaseRatioInput" type="number" min="0.01" max="1" step="0.01" required />
+          </label>
+          <label>直接上升比下限
+            <input id="directIncreaseRatioInput" type="number" min="1" max="10" step="0.01" required />
+          </label>
+          <label>原始 p 上限
+            <input id="pCutoffInput" type="number" min="0.000001" max="1" step="0.001" required />
+          </label>
+          <label>A级 FDR q 上限
+            <input id="fdrCutoffInput" type="number" min="0.000001" max="1" step="0.01" required />
+          </label>
+          <div class="analysis-settings-actions">
+            <button type="submit" class="btn btn-primary">应用并重算</button>
+            <button type="button" class="btn btn-outline" id="resetAnalysisSettings">恢复默认</button>
+          </div>
+        </form>
+        <p class="analysis-settings-help">参数仅影响当前浏览会话中的候选分类、图表和排名，不改变原始数据或MAD质控结果。建议记录最终采用的阈值，并比较候选对合理阈值变化是否稳定。</p>
+        <p id="analysisSettingsStatus" class="analysis-settings-status" role="status" aria-live="polite"></p>
+      </details>
 
       <div class="chart-grid">
         <article class="chart-card wide-card">
@@ -502,22 +533,23 @@
         <article class="method-card">
           <h3>4. 两种效应量回答不同问题</h3>
           <div class="method-formula"><span>交互效应</span><code>log₂FC = log₂(共处理组归一化活力 ÷ 同药同浓度单药组归一化活力)</code></div>
-          <p>交互效应比较“加上诱导条件后，这个药的表现相对单药改变了多少”。因为两组均已用各自实验臂基线归一化，所以这是跨臂的比值之比，也是热图、火山图和排序分数使用的主效应量。</p>
+          <p>交互效应比较“加上诱导条件后，这个药的表现相对单药改变了多少”。因为两组均已用各自实验臂基线归一化，所以这是跨臂的比值之比，也是热图、火山图和排序分数使用的主效应量。系统还计算两组均值的绝对差（共处理－单药，单位为活力百分点），避免低基线下很小的绝对变化仅因倍数较大而入选。</p>
           <div class="method-formula"><span>直接效应</span><code>直接活力比 = 共处理组归一化活力 ÷ 条件单独组归一化活力</code></div>
           <p>直接效应比较“加药后是否真的比诱导条件单独组更高或更低”。因此，正向交互并不自动等于细胞得到救援；还必须查看直接活力比和对应统计检验。</p>
         </article>
         <article class="method-card">
           <h3>5. Welch 检验与零方差处理</h3>
           <p>每个药物、浓度和诱导条件进行两项双侧 Welch t 检验：<b>共处理组 vs 同药同浓度单药组</b>得到交互 p 值；<b>共处理组 vs E 行条件单独组</b>得到直接 p 值。Welch 检验不强制假定两组方差相等。</p>
-          <p>这里的样本单位是同一板内的技术孔，并非独立生物学重复。当比较双方方差都为 0 时，标准误为 0，p 值无法可靠计算；系统保留效应量供查看，但按 <code>p = 1</code> 保守处理、标注“不可计算（零方差）”，且不列为候选。</p>
+          <p>这里的样本单位是同一板内的技术孔，并非独立生物学重复。因此 p/q 值用于描述板内测量一致性和本次初筛中的多重比较控制，不支持总体层面的验证性推断。当比较双方方差都为 0 时，标准误为 0，p 值无法可靠计算；系统保留效应量供查看，但按 <code>p = 1</code> 保守处理、标注“不可计算（零方差）”，且不列为候选。</p>
         </article>
         <article class="method-card">
           <h3>6. 增敏、直接救援与仅相对拮抗</h3>
           <ul class="method-list">
-            <li><b>增敏：</b>直接活力比 <code>≤ 0.80</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≤ −0.585</code> 且交互 <code>p &lt; 0.05</code>。</li>
-            <li><b>直接救援：</b>直接活力比 <code>≥ 1.20</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≥ 0.585</code> 且交互 <code>p &lt; 0.05</code>。</li>
-            <li><b>仅相对拮抗：</b>交互 <code>log₂FC ≥ 0.585</code> 且交互 <code>p &lt; 0.05</code>，但直接效应未同时达到救援所需的幅度和显著性。</li>
+            <li><b>增敏：</b>直接活力比 <code>≤ 0.80</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≤ −0.585</code>、绝对活力差 <code>≤ −10</code> 个百分点且交互 <code>p &lt; 0.05</code>。</li>
+            <li><b>直接救援：</b>直接活力比 <code>≥ 1.20</code> 且直接 <code>p &lt; 0.05</code>，同时交互 <code>log₂FC ≥ 0.585</code>、绝对活力差 <code>≥ 10</code> 个百分点且交互 <code>p &lt; 0.05</code>。</li>
+            <li><b>仅相对拮抗：</b>正向交互同时达到 <code>log₂FC ≥ 0.585</code>、绝对活力差 <code>≥ 10</code> 个百分点和交互 <code>p &lt; 0.05</code>，但直接效应未达到救援所需的幅度和显著性。</li>
           </ul>
+          <p>以上为默认初筛阈值，可在结果区的“初筛阈值与敏感性检查”中调整。调整只用于探索候选稳定性，最终报告应记录实际采用的参数。</p>
           <p class="method-warning">“仅相对拮抗”只说明共处理组相对该药单药组更高，不能表述为相对诱导条件单独组已经发生实际救援。三类结果分开统计，是为了保留这一关键解释差异。</p>
         </article>
         <article class="method-card">
@@ -529,7 +561,7 @@
             <li>达到效应量和原始 <code>p &lt; 0.05</code>，但未通过相应 FDR 标准者为 B 级。</li>
           </ul>
           <div class="method-formula"><span>排序分数</span><code>|交互 log₂FC| × −log₁₀(交互 p)</code></div>
-          <p>分数同时考虑效应幅度和原始显著性，只用于同类候选的复筛优先排序，不是机制证据或临床评分。候选列表可按 0.1、1、10 µM 分浓度查看。</p>
+          <p>火山图用实心点表示A级、空心点表示B级；灰点为未达到完整候选规则的其他结果。分数同时考虑效应幅度和原始显著性，只用于同类候选的复筛优先排序，不是机制证据或临床评分。候选列表可按 0.1、1、10 µM 分浓度查看。</p>
         </article>
         <article class="method-card">
           <h3>8. 图表如何解读</h3>
