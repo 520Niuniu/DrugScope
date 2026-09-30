@@ -197,3 +197,36 @@ test('antagonism viability chart data contains single, condition-only and combin
   assert.equal(app.statisticalSignificance(0.001, true), '**');
   assert.equal(app.statisticalSignificance(0.2, true), 'ns');
 });
+
+test('heatmap keeps the same drug on different plate pairs as separate analysis units', async () => {
+  const app = await loadAppFunctions();
+  const data = [
+    { platePair: 'PAIR-01', drugCode: 'D1', group: '单药', concentration: 1, viability: 90 },
+    { platePair: 'PAIR-02', drugCode: 'D1', group: '单药', concentration: 1, viability: 70 }
+  ];
+  const groups = [['无糖共处理', '无糖共处理']];
+  const units = app.buildHeatmapUnits(data, [], groups, '', 'name');
+
+  assert.equal(units.length, 2);
+  assert.equal(units[0].platePair, 'PAIR-01');
+  assert.equal(units[1].platePair, 'PAIR-02');
+  const index = app.buildHeatmapDataIndex(data, []);
+  assert.equal(index.values.get(app.heatmapCellKey('PAIR-01', 'D1', '单药', 1))[0], 90);
+  assert.equal(index.values.get(app.heatmapCellKey('PAIR-02', 'D1', '单药', 1))[0], 70);
+});
+
+test('heatmap credible-signal sorting prioritizes A-tier then B-tier candidates', async () => {
+  const app = await loadAppFunctions();
+  const data = ['D1', 'D2', 'D3'].map(drugCode => ({
+    platePair: 'PAIR-01', drugCode, group: '无糖共处理', concentration: 1, viability: 50
+  }));
+  const stats = [
+    { platePair: 'PAIR-01', drugCode: 'D1', condition: '无糖共处理', tier: 'none', score: 100, log2FC: -2 },
+    { platePair: 'PAIR-01', drugCode: 'D2', condition: '无糖共处理', tier: 'B', score: 2, log2FC: -1 },
+    { platePair: 'PAIR-01', drugCode: 'D3', condition: '无糖共处理', tier: 'A', score: 1, log2FC: -0.8 }
+  ];
+  const groups = [['无糖共处理', '无糖共处理']];
+  const units = app.buildHeatmapUnits(data, stats, groups, '', 'signal');
+
+  assert.equal(units.map(unit => unit.drugCode).join(','), 'D3,D2,D1');
+});

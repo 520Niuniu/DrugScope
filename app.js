@@ -1004,11 +1004,25 @@ function parseExperimentCsv(csvText, fileName, diagnostics = null) {
   return parsed;
 }
 
-let heatmapViewMode = 'glucose';
+let heatmapViewMode = 'all';
 let heatmapMetric = 'log2fc';
+let heatmapSortMode = 'signal';
+let heatmapQuery = '';
+
+const HEATMAP_STATUS_LABELS = Object.freeze({
+  synergy: '增敏候选',
+  rescue: '直接救援候选',
+  relativeAntagonism: '仅相对拮抗',
+  stable: '未达双重判定'
+});
 
 function getHeatmapGroups(mode = heatmapViewMode) {
   const groups = {
+    all: [
+      ['无糖共处理', '无糖共处理'],
+      ['KL11743共处理', 'KL11743 共处理'],
+      ['铜死亡诱导剂共处理', 'ES + CuCl₂ 共处理']
+    ],
     glucose: [['无糖共处理', '无糖共处理']],
     kl11743: [['KL11743共处理', 'KL11743 共处理']],
     copper: [['铜死亡诱导剂共处理', 'ES + CuCl₂ 共处理']],
@@ -1017,22 +1031,134 @@ function getHeatmapGroups(mode = heatmapViewMode) {
   return groups[mode] || groups.glucose;
 }
 
-function buildHeatmap(data) {
+function heatmapPlatePair(row) {
+  return row?.platePair || '__unpaired__';
+}
+
+function heatmapUnitKey(row) {
+  return `${heatmapPlatePair(row)}\u0000${row.drugCode}`;
+}
+
+function heatmapCellKey(platePair, drugCode, group, concentration) {
+  return `${platePair}\u0000${drugCode}\u0000${group}\u0000${concentration}`;
+}
+
+function buildHeatmapUnits(data, stats, groups, query = heatmapQuery, sortMode = heatmapSortMode) {
+  const units = new Map();
+  data.forEach(row => {
+    if (!row?.drugCode) return;
+    const platePair = heatmapPlatePair(row);
+    const key = `${platePair}\u0000${row.drugCode}`;
+    if (!units.has(key)) units.set(key, { key, platePair, drugCode: row.drugCode });
+  });
+  const statsByUnit = groupRows(stats || [], heatmapUnitKey);
+  const visibleConditions = new Set(groups.map(([group]) => group));
+  const normalizedQuery = normalizeDrugSearchTerm(query);
+  const rows = [...units.values()].filter(unit => {
+    if (!normalizedQuery) return true;
+    const info = drugKnowledgeBase[unit.drugCode] || {};
+    return [unit.drugCode, info.fullName, info.name, unit.platePair]
+      .filter(Boolean)
+      .some(value => normalizeDrugSearchTerm(value).includes(normalizedQuery));
+  });
+
+  rows.forEach(unit => {
+    const relevantStats = (statsByUnit.get(unit.key) || [])
+      .filter(row => visibleConditions.has(row.condition));
+    unit.tierRank = relevantStats.some(row => row.tier === 'A')
+      ? 0
+      : relevantStats.some(row => row.tier === 'B') ? 1 : 2;
+    const candidateStats = relevantStats.filter(row => row.tier === 'A' || row.tier === 'B');
+    unit.signalScore = Math.max(
+      0,
+      ...(candidateStats.length ? candidateStats : relevantStats)
+        .map(row => Number.isFinite(row.score) ? row.score : Math.abs(row.log2FC || 0))
+    );
+  });
+
+  rows.sort((a, b) => {
+    const byName = a.drugCode.localeCompare(b.drugCode, 'zh-CN') || a.platePair.localeCompare(b.platePair, 'zh-CN');
+    if (sortMode === 'name') return byName;
+    return a.tierRank - b.tierRank || b.signalScore - a.signalScore || byName;
+  });
+  return rows;
+}
+
+function buildHeatmapDataIndex(data, stats = latestVolcanoStats) {
+  const values = new Map();
+  data.forEach(row => {
+    if (!Number.isFinite(row.viability)) return;
+    const key = heatmapCellKey(heatmapPlatePair(row), row.drugCode, row.group, row.concentration);
+    if (!values.has(key)) values.set(key, []);
+    values.get(key).push(row.viability);
+  });
+  const statsByCell = new Map();
+  (stats || []).forEach(row => {
+    statsByCell.set(heatmapCellKey(heatmapPlatePair(row), row.drugCode, row.condition, row.concentration), row);
+  });
+  return { values, statsByCell };
+}
+
+function heatmapUnitLabels(units) {
+  const counts = new Map();
+  units.forEach(unit => counts.set(unit.drugCode, (counts.get(unit.drugCode) || 0) + 1));
+  return new Map(units.map(unit => {
+    const fullName = drugKnowledgeBase[unit.drugCode]?.fullName;
+    const drugLabel = fullName ? `${unit.drugCode} · ${fullName}` : unit.drugCode;
+    const label = counts.get(unit.drugCode) > 1 ? `${drugLabel} · 板对 ${unit.platePair}` : drugLabel;
+    return [unit.key, label];
+  }));
+}
+
+function relativeLuminanceFromRgb(color) {
+  const channels = (String(color).match(/\d+/g) || []).slice(0, 3).map(Number);
+  if (channels.length !== 3) return 1;
+  const linear = channels.map(channel => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function heatmapTextColor(background) {
+  const luminance = relativeLuminanceFromRgb(background);
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  const darkLuminance = relativeLuminanceFromRgb('rgb(32, 59, 70)');
+  const darkContrast = (Math.max(luminance, darkLuminance) + 0.05) / (Math.min(luminance, darkLuminance) + 0.05);
+  return whiteContrast > darkContrast ? '#ffffff' : '#203b46';
+}
+
+function heatmapCellDetails(unit, group, concentration, value, samples, controls, stat) {
+  const base = [`${unit.drugCode}`, `板对 ${unit.platePair}`, group, `${concentration} µM`];
+  if (heatmapMetric === 'viability') {
+    return [...base, `平均细胞活性 ${value.toFixed(2)}%`, `n=${samples.length}`].join('｜');
+  }
+  const status = HEATMAP_STATUS_LABELS[stat.status] || HEATMAP_STATUS_LABELS.stable;
+  return [
+    ...base,
+    `交互 log₂FC ${value.toFixed(3)}`,
+    `处理均值 ${stat.meanTreated.toFixed(2)}%`,
+    `单药均值 ${stat.meanControl.toFixed(2)}%`,
+    `绝对活力差 ${stat.interactionDifference.toFixed(2)} 个百分点`,
+    `P=${stat.pValue < 0.001 ? stat.pValue.toExponential(2) : stat.pValue.toFixed(3)}`,
+    `FDR q=${Number.isFinite(stat.qValue) ? (stat.qValue < 0.001 ? stat.qValue.toExponential(2) : stat.qValue.toFixed(3)) : 'NA'}`,
+    `${status}${stat.tier === 'A' || stat.tier === 'B' ? `（${stat.tier}级）` : ''}`,
+    `处理 n=${samples.length}`,
+    `单药 n=${controls.length}`
+  ].join('｜');
+}
+
+function buildHeatmap(data, stats = latestVolcanoStats) {
   const concentrations = SCREENING_CONCENTRATIONS;
   const groups = getHeatmapGroups();
-  const drugCodes = [...new Set(data.map(row => row.drugCode))].sort();
-  const groupedValues = new Map();
-  data.forEach(item => {
-    if (!Number.isFinite(item.viability)) return;
-    const key = `${item.drugCode}\u0000${item.group}\u0000${item.concentration}`;
-    if (!groupedValues.has(key)) groupedValues.set(key, []);
-    groupedValues.get(key).push(item.viability);
-  });
+  const units = buildHeatmapUnits(data, stats, groups);
+  const labels = heatmapUnitLabels(units);
+  const { values: groupedValues, statsByCell } = buildHeatmapDataIndex(data, stats);
   const table = document.createElement('table');
   const caption = document.createElement('caption');
   caption.textContent = heatmapMetric === 'log2fc'
-    ? '数值为处理组相对同药物、同浓度单药组的交互 log₂FC；蓝色为负向交互，红色为正向交互。颜色只表示方向，候选分类还需结合诱导条件单独对照。'
-    : '数值为各重复孔平均细胞活性（%）；蓝色越深表示活性越低，红色表示活性较高。';
+    ? `每格在同一板对内比较共处理组与同药物、同浓度单药组；至少各 ${ANALYSIS_CONFIG.minReplicates} 个有效重复孔才显示交互 log₂FC。颜色只表示方向，A/B 边框表示结合绝对活力差、直接效应及多重校正后的候选等级；色标在 ±1.5 截断。`
+    : '每格是在同一板对内汇总的重复孔平均细胞活性（%）；颜色以 100% 为参照并在 0–150% 截断，候选结论仍需查看交互效应和统计检验。';
   table.appendChild(caption);
 
   const groupHeader = document.createElement('tr');
@@ -1059,39 +1185,50 @@ function buildHeatmap(data) {
   }));
   table.appendChild(concentrationHeader);
 
-  drugCodes.forEach(drugCode => {
+  units.forEach(unit => {
     const row = document.createElement('tr');
     const th = document.createElement('th');
     th.scope = 'row';
     th.className = 'heatmap-drug-name';
-    const fullName = drugKnowledgeBase[drugCode]?.fullName;
-    th.textContent = fullName ? `${drugCode} · ${fullName}` : drugCode;
+    th.textContent = labels.get(unit.key);
     th.title = th.textContent;
     row.appendChild(th);
 
     groups.forEach(([group]) => concentrations.forEach(concentration => {
       const cell = document.createElement('td');
       cell.className = 'heatmap-cell';
-      const values = groupedValues.get(`${drugCode}\u0000${group}\u0000${concentration}`) || [];
-      const controlValues = groupedValues.get(`${drugCode}\u0000单药\u0000${concentration}`) || [];
+      const values = groupedValues.get(heatmapCellKey(unit.platePair, unit.drugCode, group, concentration)) || [];
+      const controlValues = groupedValues.get(heatmapCellKey(unit.platePair, unit.drugCode, '单药', concentration)) || [];
+      const stat = statsByCell.get(heatmapCellKey(unit.platePair, unit.drugCode, group, concentration));
       const treatedMean = values.length ? average(values) : null;
-      const controlMean = controlValues.length ? average(controlValues) : null;
-      const log2fc = treatedMean > 0 && controlMean > 0 ? Math.log2(treatedMean / controlMean) : null;
-      const value = heatmapMetric === 'log2fc' ? log2fc : treatedMean;
+      const value = heatmapMetric === 'log2fc' ? stat?.log2FC ?? null : treatedMean;
 
       if (value !== null) {
         cell.textContent = heatmapMetric === 'log2fc' ? value.toFixed(2) : value.toFixed(1);
-        cell.style.background = heatmapColor(value, heatmapMetric);
-        cell.style.color = heatmapMetric === 'log2fc' && Math.abs(value) >= 0.75 || heatmapMetric === 'viability' && (value < 55 || value > 135) ? '#fff' : '#203b46';
-        const pValue = values.length >= ANALYSIS_CONFIG.minReplicates && controlValues.length >= ANALYSIS_CONFIG.minReplicates
-          ? welchTTestPValue(values, controlValues)
-          : null;
-        cell.title = heatmapMetric === 'log2fc'
-          ? `${drugCode}｜${group}｜${concentration} µM｜log₂FC ${value.toFixed(3)}｜处理均值 ${treatedMean.toFixed(2)}%｜单药均值 ${controlMean.toFixed(2)}%${Number.isFinite(pValue) ? `｜P=${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(3)}` : ''}`
-          : `${drugCode}｜${group}｜${concentration} µM｜平均细胞活性 ${value.toFixed(2)}%｜n=${values.length}`;
+        const background = heatmapColor(value, heatmapMetric);
+        cell.style.background = background;
+        cell.style.color = heatmapTextColor(background);
+        if (heatmapMetric === 'log2fc' && (stat?.tier === 'A' || stat?.tier === 'B')) {
+          cell.classList.add(stat.tier === 'A' ? 'heatmap-tier-a' : 'heatmap-tier-b');
+          const marker = document.createElement('span');
+          marker.className = 'heatmap-tier-marker';
+          marker.setAttribute('aria-hidden', 'true');
+          marker.textContent = stat.tier;
+          cell.appendChild(marker);
+        }
+        const details = heatmapCellDetails(unit, group, concentration, value, values, controlValues, stat);
+        cell.title = details;
+        cell.setAttribute('aria-label', details);
+        cell.tabIndex = 0;
       } else {
         cell.textContent = '--';
         cell.classList.add('heatmap-missing');
+        const reason = heatmapMetric === 'log2fc'
+          ? `${unit.drugCode}｜板对 ${unit.platePair}｜${group}｜${concentration} µM｜不可计算：共处理组和单药组至少各需 ${ANALYSIS_CONFIG.minReplicates} 个有效重复孔且均值需大于 0`
+          : `${unit.drugCode}｜板对 ${unit.platePair}｜${group}｜${concentration} µM｜缺失`;
+        cell.title = reason;
+        cell.setAttribute('aria-label', reason);
+        cell.tabIndex = 0;
       }
       row.appendChild(cell);
     }));
@@ -1132,6 +1269,12 @@ function colorScale(value) {
 function renderHeatmap(data) {
   const heatmapHost = document.getElementById('heatmapChart');
   heatmapHost.replaceChildren();
+  const title = document.getElementById('heatmapTitle');
+  if (title) {
+    title.textContent = heatmapMetric === 'log2fc'
+      ? '热图：相对单药组的交互效应'
+      : '热图：共处理组平均细胞活性';
+  }
   if (!data.length) {
     heatmapHost.appendChild(createEmptyState('导入数据后生成热图'));
     return;
@@ -1139,9 +1282,29 @@ function renderHeatmap(data) {
   const table = buildHeatmap(data);
   const legend = document.createElement('div');
   legend.className = 'heatmap-legend';
-  legend.innerHTML = heatmapMetric === 'log2fc'
-    ? '<span>负向交互（log₂FC &lt; 0）</span><i aria-hidden="true"></i><span>0</span><b aria-hidden="true"></b><span>正向交互（log₂FC &gt; 0）</span>'
-    : '<span>低细胞活性</span><i aria-hidden="true"></i><span>100%</span><b aria-hidden="true"></b><span>高细胞活性</span>';
+  const scale = document.createElement('div');
+  scale.className = `heatmap-scale ${heatmapMetric === 'viability' ? 'viability' : 'log2fc'}`;
+  scale.setAttribute('role', 'img');
+  scale.setAttribute('aria-label', heatmapMetric === 'log2fc'
+    ? '交互 log₂FC 色标：小于等于负 1.5 为深蓝，0 为白色，大于等于正 1.5 为深红'
+    : '平均细胞活性色标：0% 为深蓝，100% 为白色，大于等于 150% 为深红');
+  const labels = heatmapMetric === 'log2fc'
+    ? ['≤−1.5', '0', '≥1.5']
+    : ['0%', '100%', '≥150%'];
+  scale.innerHTML = `<span class="heatmap-scale-bar" aria-hidden="true"></span><span class="heatmap-scale-labels"><span>${labels[0]}</span><span>${labels[1]}</span><span>${labels[2]}</span></span>`;
+  legend.appendChild(scale);
+  if (heatmapMetric === 'log2fc') {
+    [['tier-a', 'A级候选（实线）'], ['tier-b', 'B级候选（虚线）']].forEach(([className, label]) => {
+      const item = document.createElement('span');
+      item.className = 'heatmap-tier-legend';
+      item.innerHTML = `<i class="heatmap-tier-swatch ${className}" aria-hidden="true"></i>${label}`;
+      legend.appendChild(item);
+    });
+  }
+  const missing = document.createElement('span');
+  missing.className = 'heatmap-tier-legend';
+  missing.innerHTML = '<i class="heatmap-missing-swatch" aria-hidden="true"></i>缺失 / 不可计算';
+  legend.appendChild(missing);
   heatmapHost.appendChild(legend);
   heatmapHost.appendChild(table);
 }
@@ -3508,23 +3671,33 @@ function buildNativeSvgExport(target) {
 function buildHeatmapExportSvg() {
   const concentrations = SCREENING_CONCENTRATIONS;
   const groups = getHeatmapGroups();
-  const drugs = [...new Set(drugData.map(row => row.drugCode))].sort();
-  const values = new Map();
-  drugData.forEach(row => {
-    if (!Number.isFinite(row.viability)) return;
-    const key = `${row.drugCode}\u0000${row.group}\u0000${row.concentration}`;
-    if (!values.has(key)) values.set(key, []);
-    values.get(key).push(row.viability);
-  });
-
-  const left = 190, cellW = 82, headerTop = 66, groupH = 34, doseH = 30, rowH = 28;
+  const units = buildHeatmapUnits(drugData, latestVolcanoStats, groups);
+  const labels = heatmapUnitLabels(units);
+  const { values, statsByCell } = buildHeatmapDataIndex(drugData, latestVolcanoStats);
+  const left = 240, cellW = 82, headerTop = 104, groupH = 34, doseH = 30, rowH = 28;
   const width = left + groups.length * concentrations.length * cellW + 20;
-  const height = headerTop + groupH + doseH + drugs.length * rowH + 24;
+  const height = headerTop + groupH + doseH + units.length * rowH + 24;
+  const scaleCenter = heatmapMetric === 'log2fc' ? 0.5 : 2 / 3;
+  const scaleMiddleX = 12 + 200 * scaleCenter;
+  const gradientStops = heatmapMetric === 'log2fc'
+    ? '<stop offset="0%" stop-color="rgb(49,130,189)"/><stop offset="50%" stop-color="rgb(247,247,247)"/><stop offset="100%" stop-color="rgb(203,24,29)"/>'
+    : '<stop offset="0%" stop-color="rgb(49,130,189)"/><stop offset="66.667%" stop-color="rgb(247,251,255)"/><stop offset="100%" stop-color="rgb(203,24,29)"/>';
+  const scaleLabels = heatmapMetric === 'log2fc' ? ['≤−1.5', '0', '≥1.5'] : ['0%', '100%', '≥150%'];
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<defs><linearGradient id="heatmapColorScale" x1="0" x2="1">${gradientStops}</linearGradient><pattern id="heatmapMissing" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f7f9fa"/><rect width="4" height="8" fill="#e7edef"/></pattern></defs>`,
     '<rect width="100%" height="100%" fill="#ffffff"/>',
     '<style>text{font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif}.grid{stroke:#dce7ea;stroke-width:1}</style>',
-    '<text x="12" y="24" font-size="16" font-weight="700" fill="#1d2b36">Drug Effect Heatmap</text>',
-    `<text x="12" y="46" font-size="10" fill="#647782">${heatmapMetric === 'log2fc' ? 'Interaction log₂FC relative to drug-only control · blue: negative · red: positive; classification also uses condition-only control' : 'Mean cell viability (%) across replicate wells · blue: lower viability · red: higher viability'}</text>`,
+    `<text x="12" y="24" font-size="16" font-weight="700" fill="#1d2b36">${heatmapMetric === 'log2fc' ? '相对单药组的交互效应热图' : '共处理组平均细胞活性热图'}</text>`,
+    `<text x="12" y="44" font-size="10" fill="#647782">${heatmapMetric === 'log2fc' ? '同一板对内计算交互 log₂FC；颜色表示方向，候选等级由边框表示' : '同一板对内计算重复孔平均细胞活性（%）；100% 为色标参照'}</text>`,
+    '<rect x="12" y="55" width="200" height="10" rx="2" fill="url(#heatmapColorScale)"/>',
+    `<text x="12" y="79" font-size="9" fill="#647782">${scaleLabels[0]}</text>`,
+    `<text x="${scaleMiddleX}" y="79" text-anchor="middle" font-size="9" fill="#647782">${scaleLabels[1]}</text>`,
+    `<text x="212" y="79" text-anchor="end" font-size="9" fill="#647782">${scaleLabels[2]}</text>`,
+    ...(heatmapMetric === 'log2fc' ? [
+      '<rect x="240" y="54" width="20" height="14" fill="#fff" stroke="#173b48" stroke-width="3"/><text x="267" y="65" font-size="9" fill="#647782">A级候选</text>',
+      '<rect x="330" y="54" width="20" height="14" fill="#fff" stroke="#7a4d00" stroke-width="2" stroke-dasharray="4 2"/><text x="357" y="65" font-size="9" fill="#647782">B级候选</text>'
+    ] : []),
+    '<rect x="430" y="54" width="20" height="14" fill="url(#heatmapMissing)" stroke="#dce7ea"/><text x="457" y="65" font-size="9" fill="#647782">缺失 / 不可计算</text>',
     `<rect class="grid" x="10" y="${headerTop}" width="${left - 10}" height="${groupH + doseH}" fill="#eef8f8"/>`,
     `<text x="20" y="${headerTop + 38}" font-size="11" font-weight="700" fill="#1d2b36">药物</text>`];
 
@@ -3539,24 +3712,26 @@ function buildHeatmapExportSvg() {
     });
   });
 
-  drugs.forEach((drug, rowIndex) => {
+  units.forEach((unit, rowIndex) => {
     const y = headerTop + groupH + doseH + rowIndex * rowH;
-    const fullName = drugKnowledgeBase[drug]?.fullName;
-    const label = fullName ? `${drug} · ${fullName}` : drug;
+    const label = labels.get(unit.key);
     parts.push(`<rect class="grid" x="10" y="${y}" width="${left - 10}" height="${rowH}" fill="#f8fbfc"/>`);
-    parts.push(`<text x="18" y="${y + 18}" font-size="9" fill="#1d2b36">${escapeXml(truncateLabel(label, 25))}</text>`);
+    parts.push(`<text x="18" y="${y + 18}" font-size="9" fill="#1d2b36">${escapeXml(truncateLabel(label, 34))}</text>`);
     groups.forEach(([group], groupIndex) => concentrations.forEach((concentration, doseIndex) => {
       const x = left + (groupIndex * 3 + doseIndex) * cellW;
-      const samples = values.get(`${drug}\u0000${group}\u0000${concentration}`) || [];
-      const controls = values.get(`${drug}\u0000单药\u0000${concentration}`) || [];
+      const samples = values.get(heatmapCellKey(unit.platePair, unit.drugCode, group, concentration)) || [];
+      const stat = statsByCell.get(heatmapCellKey(unit.platePair, unit.drugCode, group, concentration));
       const treatedMean = samples.length ? average(samples) : null;
-      const controlMean = controls.length ? average(controls) : null;
-      const log2fc = treatedMean > 0 && controlMean > 0 ? Math.log2(treatedMean / controlMean) : null;
-      const mean = heatmapMetric === 'log2fc' ? log2fc : treatedMean;
-      const fill = mean === null ? '#f1f4f5' : heatmapColor(mean, heatmapMetric);
-      const color = mean !== null && (heatmapMetric === 'log2fc' ? Math.abs(mean) >= 0.75 : mean < 55 || mean > 135) ? '#ffffff' : '#203b46';
-      parts.push(`<rect class="grid" x="${x}" y="${y}" width="${cellW}" height="${rowH}" fill="${fill}"/>`);
+      const mean = heatmapMetric === 'log2fc' ? stat?.log2FC ?? null : treatedMean;
+      const fill = mean === null ? 'url(#heatmapMissing)' : heatmapColor(mean, heatmapMetric);
+      const color = mean === null ? '#647782' : heatmapTextColor(fill);
+      const tier = heatmapMetric === 'log2fc' && (stat?.tier === 'A' || stat?.tier === 'B') ? stat.tier : null;
+      const tierStyle = tier === 'A'
+        ? ' stroke="#173b48" stroke-width="3"'
+        : tier === 'B' ? ' stroke="#7a4d00" stroke-width="2" stroke-dasharray="4 2"' : '';
+      parts.push(`<rect class="grid" x="${x}" y="${y}" width="${cellW}" height="${rowH}" fill="${fill}"${tierStyle}/>`);
       parts.push(`<text x="${x + cellW / 2}" y="${y + 18}" text-anchor="middle" font-size="9" fill="${color}">${mean === null ? '--' : mean.toFixed(heatmapMetric === 'log2fc' ? 2 : 1)}</text>`);
+      if (tier) parts.push(`<text x="${x + cellW - 5}" y="${y + 10}" text-anchor="end" font-size="7" font-weight="700" fill="${color}">${tier}</text>`);
     }));
   });
   parts.push('</svg>');
@@ -3718,7 +3893,11 @@ function setupUI() {
     updateExportFields();
     exportDialog.showModal();
   });
-  document.getElementById('loadSampleBtn')?.addEventListener('click', loadSampleData);
+  const loadSampleButton = document.getElementById('loadSampleBtn');
+  if (loadSampleButton) {
+    loadSampleButton.hidden = !['127.0.0.1', 'localhost', ''].includes(window.location.hostname);
+    loadSampleButton.addEventListener('click', loadSampleData);
+  }
   const analysisSettingsForm = document.getElementById('analysisSettingsForm');
   const analysisSettingsStatus = document.getElementById('analysisSettingsStatus');
   syncAnalysisSettingsForm();
@@ -3798,6 +3977,14 @@ function setupUI() {
   });
   document.getElementById('heatmapMetricSelect').addEventListener('change', event => {
     heatmapMetric = event.target.value;
+    renderHeatmap(drugData);
+  });
+  document.getElementById('heatmapSortSelect').addEventListener('change', event => {
+    heatmapSortMode = event.target.value;
+    renderHeatmap(drugData);
+  });
+  document.getElementById('heatmapSearchInput').addEventListener('input', event => {
+    heatmapQuery = event.target.value;
     renderHeatmap(drugData);
   });
   document.getElementById('antagonismConditionSelect').addEventListener('change', event => {
@@ -3951,7 +4138,9 @@ async function init() {
   await loadDrugLibraryWorkbook();
   renderCellDeathKnowledge();
   const authenticationEnabled = await initializeAuthenticatedSession();
-  if (authenticationEnabled) await loadPublishedScreeningData();
+  const demoRequested = new URLSearchParams(window.location.search).get('demo') === '1';
+  if (demoRequested) loadSampleData();
+  else if (authenticationEnabled) await loadPublishedScreeningData();
 }
 
 let resizeTimer;

@@ -63,6 +63,7 @@
       <div class="header-actions">
         <span class="session-user" id="sessionUser" hidden></span>
         <button class="btn btn-outline" id="logoutBtn" type="button" hidden>退出登录</button>
+        <button class="btn btn-outline" id="loadSampleBtn" type="button" hidden>加载模拟数据</button>
         <button class="btn btn-outline" id="exportChartsBtn">导出图表</button>
         <button class="btn btn-outline" id="exportReportBtn">导出报告</button>
         <button class="btn btn-primary" id="newExperimentBtn">重新加载数据</button>
@@ -287,11 +288,12 @@
       <div class="chart-grid">
         <article class="chart-card wide-card">
           <div class="chart-card-title">
-            <span>热图：相对单药组的药物效应</span>
+            <span id="heatmapTitle">热图：相对单药组的交互效应</span>
             <div class="volcano-toolbar" aria-label="热图显示选项">
               <label class="volcano-view-label">
                 <span class="visually-hidden">热图处理组</span>
                 <select id="heatmapViewSelect" aria-label="选择热图处理组">
+                  <option value="all">全部处理组</option>
                   <option value="glucose">仅无糖共处理</option>
                   <option value="kl11743">仅 KL11743</option>
                   <option value="copper">仅 ES + CuCl₂</option>
@@ -304,6 +306,17 @@
                   <option value="log2fc">相对效应 log₂FC</option>
                   <option value="viability">平均细胞活性</option>
                 </select>
+              </label>
+              <label class="volcano-view-label">
+                <span class="visually-hidden">热图药物排序</span>
+                <select id="heatmapSortSelect" aria-label="选择热图药物排序">
+                  <option value="signal">可信效应优先</option>
+                  <option value="name">按药物名称</option>
+                </select>
+              </label>
+              <label class="heatmap-search-label">
+                <span class="visually-hidden">搜索热图药物</span>
+                <input id="heatmapSearchInput" type="search" placeholder="搜索药物" aria-label="搜索热图药物" autocomplete="off" />
               </label>
             </div>
           </div>
@@ -651,6 +664,7 @@
           <span>热图导出视图</span>
           <select id="exportHeatmapViewSelect">
             <option value="current">当前页面视图</option>
+            <option value="all">全部处理组</option>
             <option value="glucose">仅无糖共处理</option>
             <option value="kl11743">仅 KL11743</option>
             <option value="copper">仅 ES + CuCl₂</option>
